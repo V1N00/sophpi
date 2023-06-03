@@ -2,13 +2,67 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <string.h>
 #include <sys/ioctl.h>
 #include <linux/spi/spidev.h>
 
 #define SSD1306_WIDTH 128
 #define SSD1306_HEIGHT 64
 
+#define SPI_DC_PIN_NUM  (352+21)    // SD1_DO SPI2_SDI  0X03001098 pwr_gpio21
+#define SPI_RST_PIN_NUM (480+29)    // JTAG_TDO 0X03001050 XGPIOA29
+
 unsigned char buffer[SSD1306_WIDTH * SSD1306_HEIGHT / 8];
+
+static void init_gpio(int num, int direction, int value)
+{
+    char cmd[64] = {0};
+    sprintf(cmd, "echo %d > /sys/class/gpio/export", num);
+    printf("%s\n", cmd);
+    system(cmd);
+
+    if(direction == 0) // input
+    {
+        memset(cmd, 0, 64);
+        sprintf(cmd, "echo in > /sys/class/gpio/gpio%d/direction", num);
+        printf("%s\n", cmd);
+        system(cmd);
+        return;
+    } else {    // output
+        memset(cmd, 0, 64);
+        sprintf(cmd, "echo out > /sys/class/gpio/gpio%d/direction", num);
+        printf("%s\n", cmd);
+        system(cmd);
+
+        memset(cmd, 0, 64);
+        sprintf(cmd, "echo %d > /sys/class/gpio/gpio%d/value", value, num);
+        printf("%s\n", cmd);
+        system(cmd);
+        return;
+    }
+}
+
+static int gpio_output(int num, int value)
+{
+    int fd = -1;
+    int ret = -1;
+    char filename[64] = {0};
+    char str_value[4] = {0};
+
+    // open file
+    sprintf(filename, "/sys/class/gpio/gpio%d/value", num);
+    fd = open(filename, O_WRONLY);
+    if (fd < 0) {
+        perror("open gpio error: \n");
+    }
+
+    // write value
+    sprintf(str_value, "%d", value);
+    ret = write(fd, str_value, 1);
+    close(fd);
+
+    return fd;
+}
 
 void ssd1306_init(int fd)
 {
@@ -79,6 +133,10 @@ int main(int argc, char *argv[])
 {
     int fd;
     struct spi_ioc_transfer tr;
+
+    // init spio
+    init_gpio(SPI_DC_PIN_NUM, 1, 1);
+    init_gpio(SPI_RST_PIN_NUM, 1, 1);
 
     // 打开SPI设备节点
     fd = open("/dev/spidev0.0", O_RDWR);
